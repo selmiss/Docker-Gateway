@@ -12,7 +12,7 @@ option = Blueprint('images', __name__)
 
 # set docker and k8s client
 docker_client = docker.from_env()
-# config.load_kube_config()
+config.load_kube_config()
 
 #######################
 # image options
@@ -242,7 +242,7 @@ def list_pods():
         dic['container_statuses'] = container_statuses
         dic['node_name'] = i.spec.node_name
         arr.append(dic)
-    return {"data", arr}
+    return {"data": arr}
 
 # deployment
 
@@ -259,7 +259,7 @@ def list_deployments():
         dic['available_replicas'] = i.status.available_replicas
         dic['replicas'] = i.status.replicas
         arr.append(dic)
-    return {"data", arr}
+    return {"data": arr}
 
 
 @option.route("/deployment/delete", methods=['POST'])
@@ -275,8 +275,8 @@ def delete_deployment():
     return ret
 
 
-@option.route("/deployment/create", methods=['POST'])
-def create_deployment():
+@option.route("/deployment/yml/create", methods=['POST'])
+def create_deployment_yml():
     try:
         dep = yaml.safe_load(request.files.get('config'))
         client.AppsV1Api().create_namespaced_deployment(body=dep, namespace=request.form['namespace'])
@@ -286,8 +286,62 @@ def create_deployment():
     return ret
 
 
-@option.route("/deployment/update", methods=['POST'])
-def update_deployment():
+@option.route("/deployment/param/create", methods=['POST'])
+def create_deployment_param():
+    try:
+        deployment_name = request.form['name']
+        deployment_image = request.form['image']
+        environment_names = request.values.getlist('environment_names')
+        environment_values = request.values.getlist('environment_values')
+        container_ports = request.values.getlist('container_ports')
+        ports = list()
+        envs = list()
+        if len(environment_names) != len(environment_values):
+            return {"msg": "Not matched in environment settings."}
+        for p in container_ports:
+            ports.append(
+                client.V1ContainerPort(container_port=int(p))
+            )
+        for i in range(len(environment_names)):
+            envs.append(
+                client.V1EnvVar(name=environment_names[i], value=environment_values[i])
+            )
+        
+        deployment = client.V1Deployment(
+            api_version="apps/v1",
+            kind="Deployment",
+            metadata=client.V1ObjectMeta(name=deployment_name),
+            spec=client.V1DeploymentSpec(
+                replicas=int(request.form['replicas']),
+                selector=client.V1LabelSelector(
+                    match_labels={"app": "my-app"}
+                ),
+                template=client.V1PodTemplateSpec(
+                    metadata=client.V1ObjectMeta(labels={"app": "my-app"}),
+                    spec=client.V1PodSpec(
+                        containers=[
+                            client.V1Container(
+                                name=deployment_name,
+                                image=deployment_image,
+                                ports=ports,
+                                env=envs
+                            )
+                        ]
+                    )
+                )
+            )
+        )
+        client.AppsV1Api().create_namespaced_deployment(body=deployment, namespace=request.form['namespace'])
+        ret = {"msg": "create success"}
+    except Exception as err:
+        ret = {"msg": str(err)}
+        import traceback
+        traceback.print_exc()
+    return ret
+
+
+@option.route("/deployment/yml/update", methods=['POST'])
+def update_deployment_yml():
     try:
         dep = yaml.safe_load(request.files.get('config'))
         client.AppsV1Api().replace_namespaced_deployment(
@@ -298,6 +352,59 @@ def update_deployment():
         ret = {"msg": str(err)}
     return ret
 
+
+@option.route("/deployment/param/update", methods=['POST'])
+def update_deployment_param():
+    try:
+        deployment_name = request.form['name']
+        deployment_image = request.form['image']
+        environment_names = request.values.getlist('environment_names')
+        environment_values = request.values.getlist('environment_values')
+        container_ports = request.values.getlist('container_ports')
+        ports = list()
+        envs = list()
+        if len(environment_names) != len(environment_values):
+            return {"msg": "Not matched in environment settings."}
+        for p in container_ports:
+            ports.append(
+                client.V1ContainerPort(container_port=int(p))
+            )
+        for i in range(len(environment_names)):
+            envs.append(
+                client.V1EnvVar(name=environment_names[i], value=environment_values[i])
+            )
+        
+        deployment = client.V1Deployment(
+            api_version="apps/v1",
+            kind="Deployment",
+            metadata=client.V1ObjectMeta(name=deployment_name),
+            spec=client.V1DeploymentSpec(
+                replicas=int(request.form['replicas']),
+                selector=client.V1LabelSelector(
+                    match_labels={"app": "my-app"}
+                ),
+                template=client.V1PodTemplateSpec(
+                    metadata=client.V1ObjectMeta(labels={"app": "my-app"}),
+                    spec=client.V1PodSpec(
+                        containers=[
+                            client.V1Container(
+                                name=deployment_name,
+                                image=deployment_image,
+                                ports=ports,
+                                env=envs
+                            )
+                        ]
+                    )
+                )
+            )
+        )
+        client.AppsV1Api().replace_namespaced_deployment(body=deployment, name=request.form['name'], namespace=request.form['namespace'])
+        ret = {"msg": "update success"}
+    except Exception as err:
+        ret = {"msg": str(err)}
+        import traceback
+        traceback.print_exc()
+    return ret
 
 # service
 
