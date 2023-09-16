@@ -60,6 +60,8 @@ def remove_image():
 def build_image():
     try:
         tmp_path = "tmp_build_space"
+        if os.path.exists(tmp_path):
+            shutil.rmtree(tmp_path)
         if not os.path.exists(tmp_path):
             os.mkdir(tmp_path)
         file = request.files.get('dockerfile')
@@ -246,6 +248,11 @@ def list_pods():
 
 # deployment
 
+def handle_none(value):
+    if value is None:
+        return "N/A"
+    return value
+
 
 @option.route("/deployment/list", methods=['GET'])
 def list_deployments():
@@ -256,8 +263,33 @@ def list_deployments():
         dic['name'] = i.metadata.name
         dic['creation_timestamp'] = i.metadata.creation_timestamp
         dic['namespace'] = i.metadata.namespace
+        dic['labels'] = i.metadata.labels
         dic['available_replicas'] = i.status.available_replicas
+        dic['unavailable_replicas'] = i.status.unavailable_replicas
+        # dic['volumes'] = str(i.spec.template.spec.volumes)
         dic['replicas'] = i.status.replicas
+        containers_info = []
+        for container in i.spec.template.spec.containers:
+            container_info = dict()
+            container_info['name'] = container.name
+            container_info['image'] = container.image
+            
+            ports_c = list()
+            if container.ports is not None:    
+                for p in container.ports:
+                    ports_c.append(p.container_port)
+                container_info['ports'] = ports_c
+            
+            envs_c = list()
+            if container.env is not None:
+                for env in container.env:
+                    envs_c.append({
+                        "name": env.name,
+                        "value": env.value
+                    })
+                container_info['env'] = envs_c
+            containers_info.append(container_info)
+        dic['containers'] = containers_info
         arr.append(dic)
     return {"data": arr}
 
@@ -294,6 +326,13 @@ def create_deployment_param():
         environment_names = request.values.getlist('environment_names')
         environment_values = request.values.getlist('environment_values')
         container_ports = request.values.getlist('container_ports')
+        
+        label_keys = request.values.getlist('label_keys')
+        label_values = request.values.getlist('label_values')
+        labels = dict()
+        for i in range(len(label_keys)):
+            labels[label_keys[i]] = label_values[i]
+        
         ports = list()
         envs = list()
         if len(environment_names) != len(environment_values):
@@ -314,10 +353,10 @@ def create_deployment_param():
             spec=client.V1DeploymentSpec(
                 replicas=int(request.form['replicas']),
                 selector=client.V1LabelSelector(
-                    match_labels={"app": "my-app"}
+                    match_labels=labels
                 ),
                 template=client.V1PodTemplateSpec(
-                    metadata=client.V1ObjectMeta(labels={"app": "my-app"}),
+                    metadata=client.V1ObjectMeta(labels=labels),
                     spec=client.V1PodSpec(
                         containers=[
                             client.V1Container(
@@ -361,6 +400,13 @@ def update_deployment_param():
         environment_names = request.values.getlist('environment_names')
         environment_values = request.values.getlist('environment_values')
         container_ports = request.values.getlist('container_ports')
+        
+        label_keys = request.values.getlist('label_keys')
+        label_values = request.values.getlist('label_values')
+        labels = dict()
+        for i in range(len(label_keys)):
+            labels[label_keys[i]] = label_values[i]
+            
         ports = list()
         envs = list()
         if len(environment_names) != len(environment_values):
@@ -381,10 +427,10 @@ def update_deployment_param():
             spec=client.V1DeploymentSpec(
                 replicas=int(request.form['replicas']),
                 selector=client.V1LabelSelector(
-                    match_labels={"app": "my-app"}
+                    match_labels=labels
                 ),
                 template=client.V1PodTemplateSpec(
-                    metadata=client.V1ObjectMeta(labels={"app": "my-app"}),
+                    metadata=client.V1ObjectMeta(labels=labels),
                     spec=client.V1PodSpec(
                         containers=[
                             client.V1Container(
@@ -447,8 +493,8 @@ def create_service():
 @option.route("/service/delete", methods=['POST'])
 def delete_service():
     try:
-        json_data = json.loads(request.get_data().decode('utf-8'))
-        client.CoreV1Api().delete_namespaced_service(name=json_data.get('name'), namespace=json_data.get('namespace'))
+
+        client.CoreV1Api().delete_namespaced_service(name=request.form['name'], namespace=request.form['namespace'])
         ret = {"msg": "delete success"}
     except Exception as err:
         ret = {"msg": str(err)}

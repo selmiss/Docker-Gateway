@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: flask
+spec:
+  type:  NodePort
+  ports:
+    - port: 5001
+      targetPort: 5001
+      nodePort: 30000
+      protocol: TCP
+      name: anyway
+  selector:
+    type: flask1
+  externalIPs:
+    - 43.143.244.118
