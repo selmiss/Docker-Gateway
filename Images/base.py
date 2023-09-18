@@ -4,6 +4,7 @@ import os
 import shutil
 import yaml
 import docker
+import time
 import zipfile
 from kubernetes import client, config
 
@@ -30,7 +31,33 @@ def list_images():
         dic["labels"] = image.labels
         dic["short_id"] = image.short_id
         dic["tags"] = image.tags
-        arr.append(dic)
+        repo = False
+        for tag in image.tags:
+            if tag.split(":")[-1] == "repo":
+                repo = True
+                break
+        if not repo:
+            arr.append(dic) 
+        
+    return {"data": arr}
+
+
+@option.route("/image/listrepo", methods=['GET'])
+def list_images_repo():
+    images = docker_client.images.list()
+    arr = []
+    for image in images:
+        dic = dict()
+        dic["attrs"] = image.attrs
+        dic["id"] = image.id
+        dic["labels"] = image.labels
+        dic["short_id"] = image.short_id
+        dic["tags"] = image.tags
+        for tag in image.tags:
+            if tag.split(":")[-1] == "repo":
+                arr.append(dic)       
+                break 
+        
     return {"data": arr}
 
 
@@ -84,6 +111,42 @@ def build_image():
         )
         shutil.rmtree(tmp_path)
         ret = {"msg": "build success"}
+    except Exception as err:
+        ret = {"msg": str(err)}
+    return ret
+
+
+@option.route("/image/update", methods=['POST'])
+def build_update():
+    try:
+        docker_client.images.remove(request.form['image_id'])
+        time.sleep(2)
+        
+        tmp_path = "tmp_build_space"
+        if os.path.exists(tmp_path):
+            shutil.rmtree(tmp_path)
+        if not os.path.exists(tmp_path):
+            os.mkdir(tmp_path)
+        file = request.files.get('dockerfile')
+        file.save(os.path.join(tmp_path, file.filename))
+        zip_file_path = os.path.join(tmp_path, file.filename)
+        unzip_directory = os.path.join(tmp_path)
+        with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+            zip_ref.extractall(unzip_directory)
+        contents = os.listdir(unzip_directory)
+        folder_name = None
+        for item in contents:
+            item_path = os.path.join(unzip_directory, item)
+            if os.path.isdir(item_path):
+                folder_name = item
+                break
+        target_dir = os.path.join(unzip_directory, folder_name)
+        print(target_dir)
+        build_result, build_logs = docker_client.images.build(
+            path=target_dir, tag=request.form['tag'], rm=True
+        )
+        shutil.rmtree(tmp_path)
+        ret = {"msg": "update success"}
     except Exception as err:
         ret = {"msg": str(err)}
     return ret
